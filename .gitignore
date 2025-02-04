@@ -1,0 +1,29 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment (if using venv)
+venv/
+.env/
+
+# PyInstaller build folders (Executables & temporary files)
+build/
+dist/
+*.spec
+
+# Logs & system files
+*.log
+*.DS_Store
+Thumbs.db
+
+# VS Code project settings (optional)
+.vscode/
+
+# Jupyter Notebook checkpoints (if any)
+.ipynb_checkpoints/
+
+# Ignore Python environment package files
+Pipfile
+Pipfile.lock
+poetry.lock

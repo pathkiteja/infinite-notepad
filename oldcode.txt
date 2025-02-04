@@ -1,0 +1,227 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QToolBar, QAction, QFileDialog,
+    QMessageBox, QInputDialog, QScrollArea, QWidget
+)
+from PyQt5.QtCore import Qt, QRect, QPoint
+from PyQt5.QtGui import QPainter, QPen, QColor, QImage
+import sympy
+
+
+class CanvasWidget(QWidget):
+    """
+    A QWidget that manages:
+      - A QImage for drawing (freehand strokes).
+      - A rectangular selection for 'select' mode.
+      - Pen settings (color, width).
+      - Current tool mode ('draw' or 'select').
+    """
+
+    def __init__(self, width=5000, height=5000, parent=None):
+        super().__init__(parent)
+        # Make this widget large so it's scrollable
+        self.setFixedSize(width, height)
+
+        # Our internal 'canvas' is a QImage where we draw
+        self.image = QImage(width, height, QImage.Format_ARGB32)
+        self.image.fill(Qt.white)
+
+        # A list to store completed strokes: (list_of_points, color, width)
+        self.strokes = []
+        self.current_stroke = []
+
+        # Selection rectangle corners
+        self.selection_start = None
+        self.selection_end = None
+
+        # Pen properties
+        self.pen_color = QColor(0, 0, 0)
+        self.pen_width = 2
+
+        # Current tool
+        self.current_tool = "draw"
+
+        # Track if we are currently drawing
+        self.drawing = False
+
+    def setTool(self, tool_name):
+        self.current_tool = tool_name
+        # Clear any selection rectangle if we switch tools
+        self.selection_start = None
+        self.selection_end = None
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.current_tool == "draw":
+                self.drawing = True
+                self.current_stroke = [event.pos()]
+            elif self.current_tool == "select":
+                self.selection_start = event.pos()
+                self.selection_end = event.pos()
+            self.update()
+
+    def mouseMoveEvent(self, event):
+        if self.current_tool == "draw" and self.drawing:
+            self.current_stroke.append(event.pos())
+            # Draw the latest segment immediately
+            self._drawSegment()
+        elif self.current_tool == "select" and self.selection_start is not None:
+            self.selection_end = event.pos()
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.current_tool == "draw" and self.drawing:
+                # Finish the stroke
+                self.drawing = False
+                self.strokes.append((self.current_stroke, self.pen_color, self.pen_width))
+                self.current_stroke = []
+            elif self.current_tool == "select" and self.selection_start is not None:
+                self.selection_end = event.pos()
+        self.update()
+
+    def _drawSegment(self):
+        """Draw the last line segment of the current stroke onto self.image."""
+        if len(self.current_stroke) < 2:
+            return
+        p1 = self.current_stroke[-2]
+        p2 = self.current_stroke[-1]
+
+        painter = QPainter(self.image)
+        pen = QPen(self.pen_color, self.pen_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(p1, p2)
+        painter.end()
+
+    def paintEvent(self, event):
+        """
+        Paint the QImage onto the widget.
+        If in select mode, draw a red dashed rectangle for the selection box.
+        """
+        painter = QPainter(self)
+        # Draw the entire image
+        painter.drawImage(0, 0, self.image)
+
+        # Draw selection rectangle if in select mode
+        if self.current_tool == "select" and self.selection_start and self.selection_end:
+            rect = self.getSelectionRect()
+            if rect is not None:
+                pen = QPen(Qt.red, 2, Qt.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(rect)
+
+        painter.end()
+
+    def getSelectionRect(self):
+        """Return the QRect defined by selection_start and selection_end."""
+        if not self.selection_start or not self.selection_end:
+            return None
+        x1, y1 = self.selection_start.x(), self.selection_start.y()
+        x2, y2 = self.selection_end.x(), self.selection_end.y()
+        return QRect(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
+
+    def saveCanvas(self, filename):
+        """Save the entire QImage to disk."""
+        self.image.save(filename)
+
+    def saveSelection(self, filename):
+        """Crop the selected rectangle from self.image and save."""
+        rect = self.getSelectionRect()
+        if rect is None or rect.width() == 0 or rect.height() == 0:
+            return
+        cropped = self.image.copy(rect)
+        cropped.save(filename)
+
+    def clearCanvas(self):
+        """Clear the entire canvas (fill with white)."""
+        self.image.fill(Qt.white)
+        self.strokes = []
+        self.current_stroke = []
+        self.update()
+
+
+class InfiniteCanvas(QScrollArea):
+    """
+    A scrollable container for our CanvasWidget.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.canvas_widget = CanvasWidget()
+        self.setWidget(self.canvas_widget)
+        self.setWidgetResizable(False)  # We have a fixed-size canvas
+        # If you want the canvas to auto-expand, you’d handle resizing logic in CanvasWidget.
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Infinite Notepad (Fixed)")
+
+        # Create the infinite canvas (scroll area + canvas widget)
+        self.infinite_canvas = InfiniteCanvas()
+        self.setCentralWidget(self.infinite_canvas)
+        self.canvas = self.infinite_canvas.canvas_widget  # Quick reference
+
+        # Create a toolbar
+        self.toolbar = QToolBar("Tools")
+        self.addToolBar(self.toolbar)
+
+        # Actions
+        draw_action = QAction("Draw Mode", self)
+        draw_action.triggered.connect(lambda: self.canvas.setTool("draw"))
+
+        select_action = QAction("Select Mode", self)
+        select_action.triggered.connect(lambda: self.canvas.setTool("select"))
+
+        save_all_action = QAction("Save", self)
+        save_all_action.triggered.connect(self.saveCanvas)
+
+        save_selection_action = QAction("Save Selection", self)
+        save_selection_action.triggered.connect(self.saveSelection)
+
+        math_action = QAction("Math Expression", self)
+        math_action.triggered.connect(self.evaluateMath)
+
+        clear_action = QAction("Clear Canvas", self)
+        clear_action.triggered.connect(self.canvas.clearCanvas)
+
+        # Add actions to toolbar
+        self.toolbar.addAction(draw_action)
+        self.toolbar.addAction(select_action)
+        self.toolbar.addAction(save_all_action)
+        self.toolbar.addAction(save_selection_action)
+        self.toolbar.addAction(math_action)
+        self.toolbar.addAction(clear_action)
+
+    def saveCanvas(self):
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Canvas", "",
+                                                  "PNG Files (*.png);;All Files (*)")
+        if filename:
+            self.canvas.saveCanvas(filename)
+
+    def saveSelection(self):
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Selection", "",
+                                                  "PNG Files (*.png);;All Files (*)")
+        if filename:
+            self.canvas.saveSelection(filename)
+
+    def evaluateMath(self):
+        expr, ok = QInputDialog.getText(self, "Math Expression", "Enter expression:")
+        if ok and expr.strip():
+            try:
+                result = sympy.sympify(expr.strip())
+                QMessageBox.information(self, "Result", f"{expr} = {result}")
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not evaluate expression.\n{e}")
+
+
+def main():
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
