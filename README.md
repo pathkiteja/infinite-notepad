@@ -3,6 +3,8 @@
 Built with **PyQt5**, this app is perfect for note-taking and sketching!  
 
 ![Notepad Demo](https://github.com/pathkiteja/infinite-notepad/raw/main/demo.png) 
+
+**demo of the app**
 ![Notepad Demo](https://github.com/pathkiteja/infinite-notepad/raw/main/video.mp4) 
 
 ---
