@@ -40,7 +40,7 @@ If you want to run the application from the source code:
 git clone https://github.com/pathkiteja/infinite-notepad.git
 
 # Navigate to the project folder
-cd infinite-notepad
+cd infinite-notepad............................
 
 # Install dependencies
 pip install -r requirements.txt
